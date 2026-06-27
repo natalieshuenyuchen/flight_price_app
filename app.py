@@ -22,7 +22,7 @@ INR_TO_USD = 0.0106          # ₹1 ≈ $0.0106  (about ₹94 to $1)
 
 def usd(inr):
     """Convert a rupee amount to a short USD string like '$221'."""
-    return f"${inr * INR_TO_USD:,.0f}"
+    return f"\\${inr * INR_TO_USD:,.0f}"
 
 # Make every matplotlib/seaborn chart use the same look
 sns.set_theme(style="whitegrid")
@@ -76,7 +76,7 @@ if page == "Introduction 📘":
     col1.metric("Rows", f"{df.shape[0]:,}")
     col2.metric("Columns", df.shape[1])
     avg = df[TARGET].mean()
-    col3.metric("Average fare", f"₹{avg:,.0f}", delta=f"≈ {usd(avg)}", delta_color="off")
+    col3.metric("Average fare", f"₹{avg:,.0f} (${avg * INR_TO_USD:,.0f})")
 
     st.markdown("##### Data Preview")
     view = st.radio("Show from:", ["Head (top)", "Tail (bottom)"], horizontal=True)
@@ -123,7 +123,7 @@ elif page == "Visualization 📊":
                    f"(about {usd(median_price)}). That long right tail is mostly "
                    "Business class, which we split out next.")
 
-    # Tab 2: Price by class 
+    # Tab 2: Price by class
     with tab2:
         st.markdown("#### Does cabin class drive the fare?")
         order = df.groupby("class")[TARGET].median().sort_values().index
@@ -138,7 +138,7 @@ elif page == "Visualization 📊":
         if {"Business", "Economy"}.issubset(med.index):
             ratio = med["Business"] / med["Economy"]
             st.caption(f"Median Business fare is ₹{med['Business']:,.0f} ({usd(med['Business'])}), "
-                       f"about {ratio:.0f}× the median Economy fare of "
+                       f"about {ratio:.0f} times the median Economy fare of "
                        f"₹{med['Economy']:,.0f} ({usd(med['Economy'])}). "
                        "Class is the strongest single predictor of price in this data.")
         else:
@@ -160,9 +160,9 @@ elif page == "Visualization 📊":
         early    = by_days.loc[by_days.index >= 40].mean()
         st.caption(f"Booking last-minute averages ₹{last_min:,.0f} ({usd(last_min)}) versus "
                    f"₹{early:,.0f} ({usd(early)}) booking 40+ days out. This is the dataset's "
-                   "window into dynamic pricing, and why `days_left` carries real signal.")
+                   "window into dynamic pricing, and why days_left carries real signal.")
 
-    # Tab 4: Price by airline
+    # Tab 4: Price by airline 
     with tab4:
         st.markdown("#### Which airlines charge the most?")
         by_air = df.groupby("airline")[TARGET].median().sort_values()
@@ -178,7 +178,7 @@ elif page == "Visualization 📊":
                    f"({usd(top_price)}), partly a mix effect: full-service carriers sell more "
                    "Business seats, which pulls their median up.")
 
-    # Tab 5: Correlation
+    # Tab 5: Correlation 
     with tab5:
         st.markdown("#### Correlation between the numeric columns")
         corr = df[NUMERIC + [TARGET]].corr()
@@ -189,11 +189,11 @@ elif page == "Visualization 📊":
         st.pyplot(fig)
         corr_days = corr.loc["days_left", TARGET]
         sign = "negative" if corr_days < 0 else "positive"
-        st.caption(f"`days_left` has a {sign} linear correlation ({corr_days:.2f}) with price. "
+        st.caption(f"days_left has a {sign} linear correlation ({corr_days:.2f}) with price. "
                    "The link is mostly flat until the final stretch, so one straight-line number "
                    "understates it, a good argument for also trying a tree-based model.")
 
-    st.caption(f"💱 USD figures use an approximate rate of ₹1 ≈ ${INR_TO_USD} (June 2026).")
+    st.caption(f"USD figures use an approximate rate of ₹1 ≈ \\${INR_TO_USD} (June 2026).")
 
 elif page == "Prediction 🔮":
     st.subheader("03 Prediction 🔮")
