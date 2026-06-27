@@ -91,7 +91,94 @@ if page == "Introduction 📘":
 
 elif page == "Visualization 📊":
     st.subheader("02 Data Visualization 📊")
-    st.info("")
+
+    # Sample for the heavier plots so charts draw fast on 300k rows
+    plot_df = df.sample(min(5000, len(df)), random_state=1)
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Price Distribution 💵",
+        "Price by Class 🎫",
+        "Price vs Days Left 🕐",
+        "Price by Airline ✈️",
+        "Correlation 🔥",
+    ])
+
+    # Tab 1: Price distribution 
+    with tab1:
+        st.markdown("#### How much do flights cost?")
+        fig, ax = plt.subplots()
+        sns.histplot(df[TARGET], bins=50, kde=True, color=FLIGHT_BLUE, ax=ax)
+        ax.set_xlabel("Price (INR)")
+        ax.set_title("Most fares cluster low, with a long tail of pricey flights")
+        st.pyplot(fig)
+        median_price = df[TARGET].median()
+        st.caption(f"Half of all flights cost under ₹{median_price:,.0f}. "
+                   "That long right tail is mostly Business class, which we split out next.")
+
+    # Tab 2: Price by class (the biggest single driver)
+    with tab2:
+        st.markdown("#### Does cabin class drive the fare?")
+        order = df.groupby("class")[TARGET].median().sort_values().index
+        fig, ax = plt.subplots()
+        sns.boxplot(data=df, x="class", y=TARGET, order=order,
+                    color=FLIGHT_BLUE, showfliers=False, ax=ax)
+        ax.set_xlabel("")
+        ax.set_ylabel("Price (INR)")
+        ax.set_title("Business class costs several times more than Economy")
+        st.pyplot(fig)
+        med = df.groupby("class")[TARGET].median()
+        if {"Business", "Economy"}.issubset(med.index):
+            ratio = med["Business"] / med["Economy"]
+            st.caption(f"Median Business fare (₹{med['Business']:,.0f}) is about "
+                       f"{ratio:.0f}× the median Economy fare (₹{med['Economy']:,.0f}). "
+                       "Class is the strongest single predictor of price in this data.")
+        else:
+            st.caption("Business fares sit dramatically higher than Economy.")
+
+    # Tab 3: Price vs days_left (your dynamic-pricing story)
+    with tab3:
+        st.markdown("#### Do prices climb as departure approaches?")
+        by_days = df.groupby("days_left")[TARGET].mean()
+        fig, ax = plt.subplots()
+        sns.lineplot(x=by_days.index, y=by_days.values, marker="o",
+                     color=FLIGHT_GOLD, linewidth=2.5, ax=ax)
+        ax.invert_xaxis()   # far-out bookings on the left, departure day on the right
+        ax.set_xlabel("Days left until departure")
+        ax.set_ylabel("Average price (INR)")
+        ax.set_title("Fares spike in the final days before departure")
+        st.pyplot(fig)
+        st.caption("This is the dataset's window into dynamic pricing. As seats grow scarce "
+                   "near departure, average fares jump, especially in the last week or two. "
+                   "It's why `days_left` carries real signal in the model.")
+
+    # Tab 4: Price by airline 
+    with tab4:
+        st.markdown("#### Which airlines charge the most?")
+        by_air = df.groupby("airline")[TARGET].median().sort_values()
+        fig, ax = plt.subplots()
+        sns.barplot(x=by_air.values, y=by_air.index, color=FLIGHT_BLUE, ax=ax)
+        ax.set_xlabel("Median price (INR)")
+        ax.set_ylabel("")
+        ax.set_title("Median fare by airline")
+        st.pyplot(fig)
+        priciest = by_air.index[-1]
+        st.caption(f"{priciest} shows the highest median fare, partly a mix effect: the "
+                   "full-service carriers sell more Business seats, which pulls their median up.")
+
+    # Tab 5: Correlation 
+    with tab5:
+        st.markdown("#### Correlation between the numeric columns")
+        corr = df[NUMERIC + [TARGET]].corr()
+        fig, ax = plt.subplots()
+        sns.heatmap(corr, annot=True, fmt=".2f", cmap=BLUE_SEQ,
+                    vmin=-1, vmax=1, ax=ax)
+        ax.set_title("How duration and days_left relate to price")
+        st.pyplot(fig)
+        corr_days = corr.loc["days_left", TARGET]
+        sign = "negative" if corr_days < 0 else "positive"
+        st.caption(f"`days_left` has a {sign} linear correlation ({corr_days:.2f}) with price. "
+                   "The link is mostly flat until the final stretch, so one straight-line number "
+                   "understates it, which is a good argument for also trying a tree-based model.")
 
 elif page == "Prediction 🔮":
     st.subheader("03 Prediction 🔮")
