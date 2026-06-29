@@ -654,5 +654,3 @@ elif page == "Conclusion ✅":
         "transparent enough to trust. The natural next step is adding travel dates and "
         "seasonality so it can see holiday demand."
     )
-
-    st.success("All six pages complete: business case through explainable, tunable predictions.")
