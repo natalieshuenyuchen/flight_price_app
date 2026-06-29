@@ -484,7 +484,6 @@ elif page == "Explainable AI 🔍":
     """)
 
 elif page == "Hyperparameter Tuning 📈":
-def show_hyperparameter_page():
     st.subheader("05 Hyperparameter Tuning ⚙️")
     st.write("Let's find the best settings for our models!")
     
