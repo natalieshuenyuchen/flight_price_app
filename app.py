@@ -197,11 +197,232 @@ elif page == "Visualization 📊":
 
 elif page == "Prediction 🔮":
     st.subheader("03 Prediction 🔮")
-    st.info("")
+
+    st.markdown("""
+    This page compares two regression models for predicting flight prices:
+
+    - **Linear Regression**: an interpretable baseline model
+    - **Random Forest Regressor**: a nonlinear tree-based model that can capture complex pricing patterns
+
+    The goal is not only to predict fares, but also to understand which model performs better for this tabular dataset.
+    """)
+
+    st.markdown("### Model Performance Comparison")
+
+    display_results = results_df.copy()
+    display_results["MAE"] = display_results["MAE"].map(lambda x: f"₹{x:,.0f} ({usd(x)})")
+    display_results["RMSE"] = display_results["RMSE"].map(lambda x: f"₹{x:,.0f} ({usd(x)})")
+    display_results["R²"] = display_results["R²"].map(lambda x: f"{x:.3f}")
+
+    st.dataframe(display_results, use_container_width=True)
+
+    st.success(f"Best model based on lowest MAE: **{best_model_name}**")
+
+    st.markdown("### Try Your Own Flight Prediction")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        airline = st.selectbox("Airline", sorted(df["airline"].unique()))
+        source_city = st.selectbox("Source City", sorted(df["source_city"].unique()))
+        departure_time = st.selectbox("Departure Time", sorted(df["departure_time"].unique()))
+        stops = st.selectbox("Stops", sorted(df["stops"].unique()))
+
+    with col2:
+        arrival_time = st.selectbox("Arrival Time", sorted(df["arrival_time"].unique()))
+
+        destination_options = sorted([
+            city for city in df["destination_city"].unique()
+            if city != source_city
+        ])
+        destination_city = st.selectbox("Destination City", destination_options)
+
+        flight_class = st.selectbox("Class", sorted(df["class"].unique()))
+
+        duration = st.slider(
+            "Duration in hours",
+            float(df["duration"].min()),
+            float(df["duration"].max()),
+            float(df["duration"].median())
+        )
+
+        days_left = st.slider(
+            "Days left before departure",
+            int(df["days_left"].min()),
+            int(df["days_left"].max()),
+            int(df["days_left"].median())
+        )
+
+    input_df = pd.DataFrame([{
+        "airline": airline,
+        "source_city": source_city,
+        "departure_time": departure_time,
+        "stops": stops,
+        "arrival_time": arrival_time,
+        "destination_city": destination_city,
+        "class": flight_class,
+        "duration": duration,
+        "days_left": days_left,
+    }])
+
+    selected_model_name = st.selectbox(
+        "Choose a model for prediction",
+        list(models.keys())
+    )
+
+    selected_model = models[selected_model_name]
+    predicted_price = selected_model.predict(input_df)[0]
+
+    st.metric(
+        label=f"Predicted price using {selected_model_name}",
+        value=f"₹{predicted_price:,.0f}"
+    )
+
+    st.caption(f"Approximately {usd(predicted_price)}")
+
+    st.caption(
+        "This prediction is based on historical flight listings. It should be interpreted as an estimated fare benchmark, not a guaranteed ticket price."
+    )
 
 elif page == "Explainable AI 🔍":
     st.subheader("04 Explainable AI 🔍")
-    st.info("")
+
+    st.markdown("""
+    Explainable AI helps us understand **why** the model predicts a certain fare.
+    In this project, we use **SHAP (SHapley Additive exPlanations)** to interpret the Random Forest model.
+
+    SHAP shows how each feature pushes a prediction higher or lower compared with the model's average prediction.
+    """)
+
+    rf_model = models["Random Forest Regressor"]
+
+    st.markdown("### Global Feature Importance with SHAP")
+
+    # Extract preprocessor and trained Random Forest model
+    preprocessor = rf_model.named_steps["preprocessor"]
+    rf = rf_model.named_steps["model"]
+
+    # Use a user-selected sample for SHAP so the app runs quickly
+    shap_n = st.slider(
+        "Choose SHAP sample size",
+        min_value=50,
+        max_value=500,
+        value=200,
+        step=50,
+        help="Larger samples give more stable explanations but make the app slower."
+    )
+
+    shap_sample = X_test.sample(min(shap_n, len(X_test)), random_state=42)
+
+    st.caption(
+        f"SHAP values are computed on a representative sample of {len(shap_sample):,} test rows "
+        "to keep the app responsive."
+    )
+
+    # Transform data using the fitted preprocessor
+    shap_X = preprocessor.transform(shap_sample)
+
+    # Convert sparse matrix to dense if needed
+    if hasattr(shap_X, "toarray"):
+        shap_X = shap_X.toarray()
+
+    # Get transformed feature names
+    numeric_features = NUMERIC
+    categorical_features = preprocessor.named_transformers_["cat"].get_feature_names_out(CATEGORICAL)
+    all_features = np.concatenate([numeric_features, categorical_features])
+
+    # Calculate SHAP values
+    with st.spinner("Calculating SHAP values... this may take a moment."):
+        explainer = shap.TreeExplainer(rf)
+        shap_values = explainer.shap_values(shap_X)
+
+    # SHAP summary bar plot
+    fig, ax = plt.subplots(figsize=(9, 6))
+    shap.summary_plot(
+        shap_values,
+        shap_X,
+        feature_names=all_features,
+        plot_type="bar",
+        show=False,
+        max_display=15
+    )
+    st.pyplot(fig)
+
+    st.markdown("""
+    The SHAP bar chart ranks the most important features by their average impact on the model's predictions.
+    Features with larger SHAP values have stronger influence on predicted flight prices.
+    """)
+
+    st.markdown("### Local Explanation for One Flight")
+
+    example_idx = st.slider(
+        "Choose a test example",
+        min_value=0,
+        max_value=min(len(shap_sample) - 1, 199),
+        value=0,
+        step=1
+    )
+
+    example_original = shap_sample.iloc[[example_idx]]
+    example_transformed = shap_X[[example_idx]]
+
+    actual_price = y_test.loc[example_original.index[0]]
+    predicted_price = rf_model.predict(example_original)[0]
+
+    col1, col2 = st.columns(2)
+
+    col1.metric("Actual Price", f"₹{actual_price:,.0f}")
+    col1.caption(f"Approximately {usd(actual_price)}")
+
+    col2.metric("Predicted Price", f"₹{predicted_price:,.0f}")
+    col2.caption(f"Approximately {usd(predicted_price)}")
+
+    st.markdown("##### Flight details")
+    st.dataframe(example_original)
+
+    st.markdown("##### SHAP Waterfall Plot")
+
+    st.caption(
+        "Note: numeric values in the waterfall plot are standardized by the preprocessing pipeline, "
+        "while categorical variables are shown as one-hot encoded indicators."
+    )
+
+    expected_value = explainer.expected_value
+
+    # For regression, expected_value is usually a scalar
+    if isinstance(expected_value, np.ndarray):
+        expected_value = expected_value[0]
+
+    shap_explanation = shap.Explanation(
+        values=shap_values[example_idx],
+        base_values=expected_value,
+        data=example_transformed[0],
+        feature_names=all_features
+    )
+
+    fig2 = plt.figure(figsize=(12, 7))
+    shap.plots.waterfall(
+        shap_explanation,
+        max_display=8,
+        show=False
+    )
+    
+    plt.tight_layout()
+    st.pyplot(fig2, use_container_width=True)
+
+    st.markdown("""
+    The waterfall plot explains one individual prediction. Features shown in red push the predicted fare higher,
+    while features shown in blue push it lower. This helps users understand why one flight is predicted to be
+    more expensive or less expensive than the model's average prediction.
+    """)
+
+    st.markdown("### Business Interpretation")
+
+    st.write("""
+    SHAP makes the model more transparent for travelers and booking platforms. Instead of only showing a predicted fare,
+    the app can explain whether that fare is mainly driven by cabin class, airline, route, flight duration, number of stops,
+    or how close the booking is to the departure date.
+    """)
 
 elif page == "Hyperparameter Tuning 📈":
     st.subheader("05 Hyperparameter Tuning 📈")
