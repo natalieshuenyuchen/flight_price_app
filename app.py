@@ -12,6 +12,8 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import warnings
+warnings.filterwarnings('ignore')
 
 st.set_page_config(
     page_title="Flight Price Predictor ✈️",
@@ -482,9 +484,293 @@ elif page == "Explainable AI 🔍":
     """)
 
 elif page == "Hyperparameter Tuning 📈":
-    st.subheader("05 Hyperparameter Tuning 📈")
-    st.info("")
+def show_hyperparameter_page():
+    st.subheader("05 Hyperparameter Tuning ⚙️")
+    st.write("Let's find the best settings for our models!")
+    
+    if st.session_state.df is None:
+        st.warning("⚠️ Please load data first from the Data Loading page")
+        st.stop()
+    
+    df = st.session_state.df
+    
+    st.markdown("### ⚙️ Model Configuration")
+    st.write("Select what to predict and which features to use:")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        target_col = st.selectbox(
+            "Select target variable (what to predict):",
+            df.columns,
+            key="hp_target"
+        )
+    
+    with col2:
+        available_features = [col for col in df.columns if col != target_col]
+        selected_features = st.multiselect(
+            "Select features (inputs):",
+            available_features,
+            default=available_features[:5]
+        )
+    
+    if not selected_features:
+        st.warning("Please select at least one feature")
+        st.stop()
+    
+    test_size = st.slider(
+        "Test set size:",
+        min_value=0.1,
+        max_value=0.5,
+        value=0.2,
+        step=0.05
+    )
+    
+    st.markdown("### 🎯 Hyperparameter Grids")
+    st.write("Choose different parameter combinations to test:")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**Random Forest Parameters:**")
+        rf_n_estimators = st.multiselect(
+            "Number of trees (n_estimators):",
+            [50, 100, 200, 300],
+            default=[100, 200]
+        )
+        rf_max_depth = st.multiselect(
+            "Max depth:",
+            [5, 10, 15, 20, None],
+            default=[10, 20]
+        )
+        rf_min_samples_split = st.multiselect(
+            "Min samples split:",
+            [2, 5, 10],
+            default=[2, 5]
+        )
+    
+    with col2:
+        st.write("**Linear Regression:**")
+        st.info("Linear Regression has no hyperparameters to tune.\nIt will run once with default settings.")
+    
+    st.markdown("### 📊 Weight & Biases Configuration")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        w_and_b_project = st.text_input(
+            "W&B Project Name:",
+            value="final-project",
+            help="Your W&B project name"
+        )
+    
+    with col2:
+        w_and_b_entity = st.text_input(
+            "W&B Entity (username):",
+            value="",
+            help="Your W&B username"
+        )
+    
+    # RUN HYPERPARAMETER TUNING
+    if st.button("🚀 Run Hyperparameter Tuning", key="run_hp_tuning"):
+        
+        with st.spinner("Preparing data..."):
+            X = df[selected_features].copy()
+            y = df[target_col].copy()
+            
+            X = X.fillna(X.mean())
+            y = y.fillna(y.mean())
+            
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y,
+                test_size=test_size,
+                random_state=42
+            )
+            
+            st.session_state.X_train = X_train
+            st.session_state.X_test = X_test
+            st.session_state.y_train = y_train
+            st.session_state.y_test = y_test
+            st.session_state.hp_target = target_col
+            st.session_state.hp_features = selected_features
+        
+        st.write("---")
+        st.write("## 🌲 Random Forest Hyperparameter Tuning")
+        
+        with st.spinner("Tuning Random Forest..."):
+            param_grid = {
+                'n_estimators': rf_n_estimators,
+                'max_depth': rf_max_depth,
+                'min_samples_split': rf_min_samples_split
+            }
+            
+            rf_model = RandomForestRegressor(
+                random_state=42,
+                n_jobs=-1
+            )
+            
+            grid_search_rf = GridSearchCV(
+                rf_model,
+                param_grid,
+                cv=5,
+                scoring='r2',
+                n_jobs=-1,
+                verbose=0
+            )
+            
+            grid_search_rf.fit(X_train, y_train)
+            
+            best_rf_model = grid_search_rf.best_estimator_
+            rf_predictions = best_rf_model.predict(X_test)
+            
+            rf_mse = mean_squared_error(y_test, rf_predictions)
+            rf_mae = mean_absolute_error(y_test, rf_predictions)
+            rf_r2 = r2_score(y_test, rf_predictions)
+            
+            if w_and_b_entity:
+                wandb.init(
+                    project=w_and_b_project,
+                    entity=w_and_b_entity,
+                    name="RandomForest_Tuning",
+                    reinit=True
+                )
+                
+                wandb.log({
+                    "model": "Random Forest",
+                    "best_params": grid_search_rf.best_params_,
+                    "best_cv_score": grid_search_rf.best_score_,
+                    "test_mse": rf_mse,
+                    "test_mae": rf_mae,
+                    "test_r2": rf_r2
+                })
+                
+                wandb.finish()
+            
+            st.success("Random Forest tuning complete!")
+            st.write("Here are the best results from all the parameter combinations we tested:")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Best CV R² Score", f"{grid_search_rf.best_score_:.4f}")
+            with col2:
+                st.metric("Test R² Score", f"{rf_r2:.4f}")
+            with col3:
+                st.metric("Test MAE", f"{rf_mae:.4f}")
+            
+            st.write("**Best Parameters:**")
+            for param, value in grid_search_rf.best_params_.items():
+                st.write(f"- {param}: {value}")
+            
+            st.session_state.best_rf_model = best_rf_model
+            st.session_state.best_rf_params = grid_search_rf.best_params_
+            st.session_state.best_rf_metrics = {
+                'mse': rf_mse,
+                'mae': rf_mae,
+                'r2': rf_r2
+            }
+        
+        st.write("---")
+        st.write("## 📐 Linear Regression (Baseline)")
+        
+        with st.spinner("Training Linear Regression..."):
+            lr_model = LinearRegression()
+            lr_model.fit(X_train, y_train)
+            
+            lr_predictions = lr_model.predict(X_test)
+            
+            lr_mse = mean_squared_error(y_test, lr_predictions)
+            lr_mae = mean_absolute_error(y_test, lr_predictions)
+            lr_r2 = r2_score(y_test, lr_predictions)
+            
+            if w_and_b_entity:
+                wandb.init(
+                    project=w_and_b_project,
+                    entity=w_and_b_entity,
+                    name="LinearRegression_Baseline",
+                    reinit=True
+                )
+                
+                wandb.log({
+                    "model": "Linear Regression",
+                    "test_mse": lr_mse,
+                    "test_mae": lr_mae,
+                    "test_r2": lr_r2
+                })
+                
+                wandb.finish()
+            
+            st.success("Linear Regression training complete!")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Test R² Score", f"{lr_r2:.4f}")
+            with col2:
+                st.metric("Test MAE", f"{lr_mae:.4f}")
+            with col3:
+                st.metric("Test MSE", f"{lr_mse:.4f}")
+            
+            st.session_state.best_lr_model = lr_model
+            st.session_state.best_lr_metrics = {
+                'mse': lr_mse,
+                'mae': lr_mae,
+                'r2': lr_r2
+            }
+        
+        st.write("---")
+        st.write("## 🏆 Model Comparison")
+        st.write("Comparing the best versions of both models:")
+        
+        comparison_data = {
+            'Model': ['Random Forest', 'Linear Regression'],
+            'R² Score': [rf_r2, lr_r2],
+            'MAE': [rf_mae, lr_mae],
+            'MSE': [rf_mse, lr_mse]
+        }
+        
+        comparison_df = pd.DataFrame(comparison_data)
+        st.dataframe(comparison_df, use_container_width=True)
+        
+        if rf_r2 > lr_r2:
+            best_model_name = "Random Forest"
+            st.session_state.best_model = best_rf_model
+            st.session_state.best_model_name = "Random Forest"
+        else:
+            best_model_name = "Linear Regression"
+            st.session_state.best_model = lr_model
+            st.session_state.best_model_name = "Linear Regression"
+        
+        st.success(f"🎯 Best Model: **{best_model_name}**")
+        st.write(f"We'll use this model for our final predictions because it has the best performance!")
+        
+        st.write("---")
+        st.write("## 📋 All Trials - Random Forest")
+        st.write("This shows every combination of parameters we tested and how they performed:")
+        
+        trials_data = []
+        for params, mean_score in zip(grid_search_rf.cv_results_['params'], 
+                                       grid_search_rf.cv_results_['mean_test_score']):
+            trial_row = params.copy()
+            trial_row['CV R² Score'] = mean_score
+            trials_data.append(trial_row)
+        
+        trials_df = pd.DataFrame(trials_data)
+        trials_df = trials_df.sort_values('CV R² Score', ascending=False)
+        st.dataframe(trials_df, use_container_width=True)
+        
+        st.write("**Top 5 Trials:**")
+        top_5 = trials_df.head(5)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.barh(range(len(top_5)), top_5['CV R² Score'])
+        ax.set_yticks(range(len(top_5)))
+        ax.set_yticklabels([f"Trial {i+1}" for i in range(len(top_5))])
+        ax.set_xlabel('CV R² Score')
+        ax.set_title('Top 5 Random Forest Trials')
+        st.pyplot(fig)
 
+
+if __name__ == "__main__":
+    show_hyperparameter_page()
+    
 elif page == "Conclusion ✅":
     st.subheader("06 Conclusion ✅")
     st.info("")
