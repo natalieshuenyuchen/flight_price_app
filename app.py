@@ -582,131 +582,77 @@ elif page == "Hyperparameter Tuning 📈":
     
 elif page == "Conclusion ✅":
     st.subheader("06 Conclusion ✅")
-    
-    best_model_name = st.session_state.best_model_name
-    st.write(f"**Best Model: {best_model_name}**")
-    st.write("Here are the final results from our model training:")
-    
-    st.markdown("## 📊 Results")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    best_model = st.session_state.best_model
-    best_model_name = st.session_state.best_model_name
-    y_test = st.session_state.y_test
-    X_test = st.session_state.X_test
-    predictions = best_model.predict(X_test)
-    
-    r2 = r2_score(y_test, predictions)
-    mae = mean_absolute_error(y_test, predictions)
-    
-    with col1:
-        st.metric("Final R² Score", f"{r2:.4f}")
-    
-    with col2:
-        st.metric("Mean Absolute Error", f"{mae:.4f}")
-    
-    with col3:
-        accuracy_percentage = (r2 * 100)
-        st.metric("Model Explains", f"{accuracy_percentage:.1f}%")
-    
-    st.markdown("---")
-    st.markdown("## 🔍 Selected Model Details")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**Model Information:**")
-        st.write(f"- **Model Type:** {best_model_name}")
-        st.write(f"- **Target Variable:** {st.session_state.hp_target}")
-        st.write(f"- **Number of Features:** {len(st.session_state.hp_features)}")
-        st.write(f"- **Training Samples:** {len(st.session_state.X_train)}")
-        st.write(f"- **Test Samples:** {len(st.session_state.X_test)}")
-    
-    with col2:
-        st.write("**Features Used:**")
-        for i, feature in enumerate(st.session_state.hp_features):
-            st.write(f"- {feature}")
-    
-    st.markdown("---")
-    st.markdown("## 📈 Model Performance Comparison")
-    
-    comparison_data = {
-        'Metric': ['R² Score', 'MAE'],
-        'Random Forest': [
-            f"{st.session_state.best_rf_metrics['r2']:.4f}",
-            f"{st.session_state.best_rf_metrics['mae']:.4f}"
-        ],
-        'Linear Regression': [
-            f"{st.session_state.best_lr_metrics['r2']:.4f}",
-            f"{st.session_state.best_lr_metrics['mae']:.4f}"
-        ]
-    }
-    
-    comparison_df = pd.DataFrame(comparison_data)
-    st.dataframe(comparison_df, use_container_width=True)
-    
-    if best_model_name == "Random Forest":
-        st.write("✅ Random Forest performed better - it has lower prediction error and explains more variance in the data")
-    else:
-        st.write("✅ Linear Regression performed better - it's simpler but still accurate for this dataset")
-    
-    st.markdown("---")
-    st.markdown("## 🎯 Prediction Accuracy Visualization")
-    
-    fig, ax = plt.subplots(figsize=(10, 6))
-    
-    ax.scatter(y_test, predictions, alpha=0.6, s=50)
-    
-    min_val = min(y_test.min(), predictions.min())
-    max_val = max(y_test.max(), predictions.max())
-    ax.plot([min_val, max_val], [min_val, max_val], 'r--', lw=2, label='Perfect Prediction')
-    
-    ax.set_xlabel(f'Actual {st.session_state.hp_target}')
-    ax.set_ylabel(f'Predicted {st.session_state.hp_target}')
-    ax.set_title('Actual vs Predicted Values')
+
+    # Pull the winning model and score it on the held-out test set
+    best_model = models[best_model_name]
+    preds = best_model.predict(X_test)
+    r2   = r2_score(y_test, preds)
+    mae  = mean_absolute_error(y_test, preds)
+    rmse = np.sqrt(mean_squared_error(y_test, preds))
+
+    st.markdown(f"### Best model: **{best_model_name}**")
+    st.write(
+        "We compared an interpretable Linear Regression baseline against a Random Forest "
+        "that can capture nonlinear pricing patterns. Here's how the winner performs on "
+        "flights it never saw during training."
+    )
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("R² (variance explained)", f"{r2:.3f}")
+    c2.metric("Average error (MAE)", f"₹{mae:,.0f} ({usd(mae)})")
+    c3.metric("Typical error (RMSE)", f"₹{rmse:,.0f} ({usd(rmse)})")
+    st.caption(
+        f"On average the prediction lands within about {usd(mae)} of the real fare, "
+        f"and the model explains roughly {r2*100:.0f}% of why fares differ."
+    )
+
+    st.markdown("### How the two models compared")
+    show = results_df.copy()
+    show["MAE"]  = show["MAE"].map(lambda x: f"₹{x:,.0f} (${x*INR_TO_USD:,.0f})")
+    show["RMSE"] = show["RMSE"].map(lambda x: f"₹{x:,.0f} (${x*INR_TO_USD:,.0f})")
+    show["R²"]   = show["R²"].map(lambda x: f"{x:.3f}")
+    st.dataframe(show, use_container_width=True)
+    st.caption(
+        "Random Forest wins because flight pricing is nonlinear: the jump near departure "
+        "and the gap between Economy and Business aren't straight lines, which a linear "
+        "model can't bend to fit."
+    )
+
+    st.markdown("### Predicted vs actual fares")
+    sample = pd.DataFrame({"Actual": y_test.values, "Predicted": preds}) \
+                .sample(min(2000, len(y_test)), random_state=1)
+    fig, ax = plt.subplots()
+    ax.scatter(sample["Actual"], sample["Predicted"], alpha=0.3, color=FLIGHT_BLUE)
+    lims = [sample["Actual"].min(), sample["Actual"].max()]
+    ax.plot(lims, lims, "--", color=FLIGHT_GOLD, linewidth=2, label="Perfect prediction")
+    ax.set_xlabel("Actual fare (INR)")
+    ax.set_ylabel("Predicted fare (INR)")
+    ax.set_title("Points near the gold line are good predictions")
     ax.legend()
-    ax.grid(True, alpha=0.3)
-    
     st.pyplot(fig)
-    
-    if hasattr(best_model, 'feature_importances_'):
-        st.markdown("---")
-        st.markdown("## ⭐ Feature Importance")
-        
-        feature_importance = best_model.feature_importances_
-        features = st.session_state.hp_features
-        
-        importance_df = pd.DataFrame({
-            'Feature': features,
-            'Importance': feature_importance
-        }).sort_values('Importance', ascending=False)
-        
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.barh(importance_df['Feature'], importance_df['Importance'])
-        ax.set_xlabel('Importance Score')
-        ax.set_title('Feature Importance')
-        ax.invert_yaxis()
-        
-        st.pyplot(fig)
-        
-        st.write("**Top 3 Most Important Features:**")
-        top_3 = importance_df.head(3)
-        for idx, (feature, importance) in enumerate(zip(top_3['Feature'], top_3['Importance'])):
-            st.write(f"{idx + 1}. **{feature}**: {importance:.4f}")
-    
-    st.markdown("## 📝 Summary")
-    
-    summary_text = f"""
-- Best Model: {best_model_name}
-- Final R² Score: {r2:.4f}
-- Prediction Error (MAE): {mae:.4f}
-- Features Used: {len(st.session_state.hp_features)}
-- Training Samples: {len(st.session_state.X_train)}
-- Test Samples: {len(st.session_state.X_test)}
-    """
-    
-    st.write(summary_text)
-    
-    st.markdown("---")
-    st.info("💡 This model is ready to use for making predictions on new flight data!")
+    st.caption("The model tracks fares well across the range, with the most spread on the "
+               "priciest Business tickets, where fewer examples exist to learn from.")
+
+    st.markdown("### What we learned")
+    st.markdown(
+        """
+- **Cabin class is the biggest driver of price.** Business fares run several times higher
+  than Economy, and the SHAP analysis confirms class dominates every other feature.
+- **Booking timing is real and learnable.** Fares stay flat for weeks, then spike in the
+  final days before departure. That dynamic-pricing pattern is exactly why days_left
+  carries signal, and why the nonlinear model outperforms the linear one.
+- **The model is honest about its limits.** An R² below 1.0 is expected. Real airline
+  pricing also reacts to the exact travel date, live seat inventory, and competitor fares,
+  none of which are in this dataset. The gap is the part of pricing the data can't see.
+        """
+    )
+
+    st.markdown("### Business value")
+    st.write(
+        "Even with those limits, the model is accurate enough to power a fair-price check "
+        "or a book-now-versus-wait nudge for travelers, and the SHAP explanations make it "
+        "transparent enough to trust. The natural next step is adding travel dates and "
+        "seasonality so it can see holiday demand."
+    )
+
+    st.success("All six pages complete: business case through explainable, tunable predictions.")
