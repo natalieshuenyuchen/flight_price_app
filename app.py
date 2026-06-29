@@ -70,6 +70,56 @@ def load_data(path="flights.csv"):
 
 df = load_data()
 
+## Train the two models once (cached)
+@st.cache_resource(show_spinner="Training the two models (runs once)...")
+def train_models(_df):
+    work = _df
+    if len(work) > 50000:                      # keeps training fast + inside Streamlit's memory
+        work = work.sample(50000, random_state=42)
+
+    X = work[CATEGORICAL + NUMERIC]
+    y = work[TARGET]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42)
+
+    def make_preprocessor():
+        # named "cat" / "num" so the SHAP page can find them later
+        return ColumnTransformer(transformers=[
+            ("num", StandardScaler(), NUMERIC),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL),
+        ])
+
+    # Pipeline steps named "preprocessor" / "model" so the SHAP page can unpack them
+    models = {
+        "Linear Regression": Pipeline([
+            ("preprocessor", make_preprocessor()),
+            ("model", LinearRegression()),
+        ]),
+        "Random Forest Regressor": Pipeline([
+            ("preprocessor", make_preprocessor()),
+            ("model", RandomForestRegressor(
+                n_estimators=100, max_depth=20, random_state=42, n_jobs=-1)),
+        ]),
+    }
+
+    rows = []
+    for name, pipe in models.items():
+        pipe.fit(X_train, y_train)
+        preds = pipe.predict(X_test)
+        rows.append({
+            "Model": name,
+            "MAE":  mean_absolute_error(y_test, preds),
+            "RMSE": np.sqrt(mean_squared_error(y_test, preds)),
+            "R²":   r2_score(y_test, preds),
+        })
+
+    results_df = pd.DataFrame(rows).set_index("Model")
+    best_model_name = results_df["MAE"].idxmin()
+    return models, results_df, best_model_name, X_test, y_test
+
+
+models, results_df, best_model_name, X_test, y_test = train_models(df)
+
 ## Step 03 - Pages
 if page == "Introduction 📘":
     st.title("✈️ Predicting Flight Prices in India")
@@ -218,10 +268,9 @@ elif page == "Prediction 🔮":
     st.markdown("### Model Performance Comparison")
 
     display_results = results_df.copy()
-    display_results["MAE"] = display_results["MAE"].map(lambda x: f"₹{x:,.0f} ({usd(x)})")
-    display_results["RMSE"] = display_results["RMSE"].map(lambda x: f"₹{x:,.0f} ({usd(x)})")
-    display_results["R²"] = display_results["R²"].map(lambda x: f"{x:.3f}")
-
+    display_results["MAE"]  = display_results["MAE"].map(lambda x: f"₹{x:,.0f} (${x*INR_TO_USD:,.0f})")
+    display_results["RMSE"] = display_results["RMSE"].map(lambda x: f"₹{x:,.0f} (${x*INR_TO_USD:,.0f})")
+    display_results["R²"]   = display_results["R²"].map(lambda x: f"{x:.3f}")
     st.dataframe(display_results, use_container_width=True)
 
     st.success(f"Best model based on lowest MAE: **{best_model_name}**")
