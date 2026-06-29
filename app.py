@@ -55,7 +55,7 @@ page = st.sidebar.selectbox(
         "Conclusion ✅",
     ],
 )
-# st.image("header.png")   # uncomment once you upload an image
+st.image("header.png")   
 
 ## Step 02 - Load and prepare the dataset
 CATEGORICAL = ["airline", "source_city", "departure_time", "stops",
